@@ -45,15 +45,16 @@ main(void) {
 					newInput = fopen(line-> redirect_input, "r"); //abrimos el fichero como escritura
 					fdIn = fileno(newInput);
 					dup2(fdIn, 0);
+					fclose(newInput);
 				}
 				if (boolOut) { //si hay red. de salida
 					newOutput = fopen(line-> redirect_output, "w+"); //abrimos el fichero como escritura
 					fdOut= fileno(newOutput);
 					dup2(fdOut, 1);
+					fclose(newOutput);
 				}
 				execvp(line->commands[0].filename, line->commands[0].argv);
-				fclose(newInput); // DUDA: ¿cuándo finaliza el programa, lo mata?
-				fclose(newOutput);
+				 // DUDA: ¿cuándo finaliza el programa, lo mata?
 				exit(1);
 			}
 			else{
