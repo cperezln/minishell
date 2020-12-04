@@ -1,5 +1,5 @@
 #include <stdio.h>
-
+#include <unistd.h>
 #include "parser.h"
 
 int
@@ -7,8 +7,8 @@ main(void) {
 	char buf[1024];
 	tline * line;
 	int i,j;
-
-	printf("==> ");	
+	char directorioActual[512];
+	printf("%s==> ",getcwd(directorioActual,-1));	
 	while (fgets(buf, 1024, stdin)) {
 		
 		line = tokenize(buf);
@@ -33,7 +33,7 @@ main(void) {
 				printf("  argumento %d: %s\n", j, line->commands[i].argv[j]);
 			}
 		}
-		printf("==> ");	
+		printf("%s==> ",getcwd(directorioActual,-1));	
 	}
 	return 0;
 }
