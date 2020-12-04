@@ -12,14 +12,15 @@ main(void) {
 	int * p[2]; //Puntero a pipe
 	char buf[1024];
 	tline * line;
-	int i,j, fdIn, fdOut;
+	int i,j, fdIn, fdOut, fdErr;
 	char directorioActual[512];
-	FILE * newInput, *newOutput; 
-	int boolIn, boolOut;
+	FILE * newInput, *newOutput, *newErr; 
+	int boolIn, boolOut, boolErr;
 	printf("%s==> ",getcwd(directorioActual,-1));	
 	while (fgets(buf, 1024, stdin)) {
 		boolIn = 0;
 		boolOut = 0;
+		boolErr = 0;
 		line = tokenize(buf);
 		if (line==NULL) {
 			continue;
@@ -34,6 +35,7 @@ main(void) {
 		}
 		if (line->redirect_error != NULL) {
 			printf("redirección de error: %s\n", line->redirect_error);
+			boolErr = 1;
 		}
 		if (line->background) {
 			printf("comando a ejecutarse en background\n");
@@ -52,6 +54,12 @@ main(void) {
 					fdOut= fileno(newOutput);
 					dup2(fdOut, 1);
 					fclose(newOutput);
+				}
+				if (boolErr) { //si hay red. de salida
+					newErr = fopen(line-> redirect_error, "w+"); //abrimos el fichero como escritura
+					fdErr= fileno(newErr);
+					dup2(fdErr, 2);
+					fclose(newErr);
 				}
 				execvp(line->commands[0].filename, line->commands[0].argv);
 				 // DUDA: ¿cuándo finaliza el programa, lo mata?
