@@ -88,20 +88,20 @@ main(void) {
 			}
 			else{
 				wait(&status);
-				//read(p[0], buf, 1024);
-				//fprintf(stderr, "%s\n", buf);
+				/*read(p[0], buf, 1024);
+				fprintf(stderr, "%s\n", buf);*/
 				int pAux[2];
 				pipe(pAux);
 				for (int i = 1; i < (line->ncommands - 1); i++) {	
-					//fprintf(stderr, "For dentro del padre");
-					/*read(p[0], buf, 1024);
-					write(pAux[1], buf, 1024);*/
-					dup2(p[0], pAux[1]);
+					fprintf(stderr, "For dentro del padre");
+					int aux1 = dup(p[0]);
+					read(aux1, buf, 1024);
+					fprintf(stderr, "%s\n", buf);
+					write(pAux[1], buf, 1024);
 					int pid2 = fork();
 					if (pid2 == 0) {
-						//fprintf(stderr, "dentro del hijo2");
-						close(pAux[1]);
-						close(p[0]);
+						//dup2(p[0], pAux[1]);
+						fprintf(stderr, "dentro del hijo2");
 						dup2(pAux[0], 0);
 						dup2(p[1], 1);
 						execvp(line->commands[i].filename, line->commands[i].argv);
@@ -113,6 +113,9 @@ main(void) {
 				}
 				//fprintf(stderr, "padre pero no for\n");
 				int pidFin = fork();
+				close(pAux[0]);
+				close(pAux[1]);
+				close(p[1]);
 				if (pidFin == 0) {
 					dup2(p[0], 0);
 					if (boolOut) { //si hay red. de salida
@@ -128,12 +131,10 @@ main(void) {
 						fclose(newErr);
 					}*/
 					fprintf(stderr, "Estamos dentro de hijo fin\n");
-					close(0);
 					execvp(line->commands[line->ncommands-1].filename, line->commands[line->ncommands-1].argv);
 					exit(1);
 				}
 				else{
-					fprintf(stderr, "A continuación del wait\n");
 					wait(NULL);
 				}
 			}
