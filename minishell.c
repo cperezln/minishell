@@ -55,12 +55,12 @@ main(void) {
 					dup2(fdOut, 1);
 					fclose(newOutput);
 				}
-				if (boolErr) { //si hay red. de salida
+				/*if (boolErr) { //si hay red. de salida
 					newErr = fopen(line-> redirect_error, "w+"); //abrimos el fichero como escritura
 					fdErr= fileno(newErr);
 					dup2(fdErr, 2);
 					fclose(newErr);
-				}
+				}*/
 				execvp(line->commands[0].filename, line->commands[0].argv);
 				 // DUDA: ¿cuándo finaliza el programa, lo mata?
 				exit(1);
