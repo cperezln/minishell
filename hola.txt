@@ -1,6 +1,0 @@
-hola.txt
-libparser.a
-minishell
-minishell.c
-parser.h
-README.md
