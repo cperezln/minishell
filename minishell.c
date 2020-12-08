@@ -5,16 +5,20 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 
-int
-main(void) {
-	int status; //variable para que el padre espere
-	int p[2]; //Puntero a pipe
+//Funciones Ejecutar
+void exec1Command(int boolIn, int boolOut, int boolErr, int bg, tline* line);
+void execNCommand(int boolIn, int boolOut, int boolErr, int bg, tline* line);
+
+//Variables globales
+FILE * newInput, *newOutput, *newErr; 
+int status;
+int fdIn, fdOut, fdErr;
+char directorioActual[512];
+
+int main(void) {
 	char buf[1024];
 	tline * line;
-	int i,j, fdIn, fdOut, fdErr;
-	char directorioActual[512];
-	FILE * newInput, *newOutput, *newErr; 
-	int boolIn, boolOut, boolErr;
+	int boolIn, boolOut, boolErr, bg;
 	printf("%s==> ",getcwd(directorioActual,-1));	
 	while (fgets(buf, 1024, stdin)) {
 		boolIn = 0;
@@ -40,112 +44,110 @@ main(void) {
 			printf("comando a ejecutarse en background\n");
 		} 
 		if (line->ncommands == 1) { // Diferenciar caso un único mandato
-			int pid = fork();
-			if (pid == 0) {
-				if (boolIn) { //si hay red. de entrada
-					newInput = fopen(line-> redirect_input, "r"); //abrimos el fichero como escritura
-					fdIn = fileno(newInput);
-					dup2(fdIn, 0);
-					fclose(newInput);
-				}
-				if (boolOut) { //si hay red. de salida
-					newOutput = fopen(line-> redirect_output, "w+"); //abrimos el fichero como escritura
-					fdOut= fileno(newOutput);
-					dup2(fdOut, 1);
-					fclose(newOutput);
-				}
-				/*if (boolErr) { //si hay red. de salida
-					newErr = fopen(line-> redirect_error, "w+"); //abrimos el fichero como escritura
-					fdErr= fileno(newErr);
-					dup2(fdErr, 2);
-					fclose(newErr);
-				}*/
-				execvp(line->commands[0].filename, line->commands[0].argv);
-				 // DUDA: ¿cuándo finaliza el programa, lo mata?
-				exit(1);
-			}
-			else{
-				wait(&status);
-			}
+			exec1Command(boolIn, boolOut, boolErr, bg, line);
 		}
-		else{
-			char bufAux[1024];
-			pipe(p);
-			int pid1 = fork(); //primer hijo
-			if (pid1 == 0) {
-				if (boolIn) { //si hay red. de entrada
-					newInput = fopen(line-> redirect_input, "r"); //abrimos el fichero como escritura
-					fdIn = fileno(newInput);
-					dup2(fdIn, 0);
-					fclose(newInput);
-				}
-				close(p[0]);
-				dup2(p[1], 1); 
-				//fprintf(stderr, "Primer hijo\n");
-				execvp(line->commands[0].filename, line->commands[0].argv);
-				//fprintf(stderr, "Postex");
-				exit(1);
-			}
-			else{
-				wait(&status);
-				/*read(p[0], buf, 1024);
-				fprintf(stderr, "%s\n", buf);*/
-				int pAux[2];
-				pipe(pAux);
-				for (int i = 1; i < (line->ncommands - 1); i++) {	
-					fprintf(stderr, "For dentro del padre");
-					int aux1 = dup(p[0]);
-					read(aux1, buf, 1024);
-					fprintf(stderr, "%s\n", buf);
-					write(pAux[1], buf, 1024);
-					int pid2 = fork();
-					if (pid2 == 0) {
-						//dup2(p[0], pAux[1]);
-						fprintf(stderr, "dentro del hijo2");
-						dup2(pAux[0], 0);
-						dup2(p[1], 1);
-						execvp(line->commands[i].filename, line->commands[i].argv);
-						exit(1);
-					}
-					else{
-						wait(&status);
-					}
-				}
-				//fprintf(stderr, "padre pero no for\n");
-				int pidFin = fork();
-				close(pAux[0]);
-				close(pAux[1]);
-				close(p[1]);
-				if (pidFin == 0) {
-					dup2(p[0], 0);
-					if (boolOut) { //si hay red. de salida
-						newOutput = fopen(line-> redirect_output, "w+"); //abrimos el fichero como escritura
-						fdOut= fileno(newOutput);
-						dup2(fdOut, 1);
-						fclose(newOutput);
-					}
-					/*if (boolErr) { //si hay red. de salida
-						newErr = fopen(line-> redirect_error, "w+"); //abrimos el fichero como escritura
-						fdErr= fileno(newErr);
-						dup2(fdErr, 2);
-						fclose(newErr);
-					}*/
-					fprintf(stderr, "Estamos dentro de hijo fin\n");
-					execvp(line->commands[line->ncommands-1].filename, line->commands[line->ncommands-1].argv);
-					exit(1);
-				}
-				else{
-					wait(NULL);
-				}
-			}
-			/*for (i=0; i<line->ncommands; i++) {
-				printf("orden %d (%s):\n", i, line->commands[i].filename);
-				for (j=0; j<line->commands[i].argc; j++) {
-					printf("  argumento %d: %s\n", j, line->commands[i].argv[j]);
-				}
-			}*/
+		else if (line->ncommands>1) {
+			execNCommand(boolIn, boolOut, boolErr, bg, line);
 		}
 		printf("%s==> ",getcwd(directorioActual,-1));	
 	}
 	return 0;
 }
+
+void exec1Command(int boolIn, int boolOut, int boolErr, int bg, tline* line){
+	int pid = fork();
+	if (pid == 0) {
+		if (boolIn) { //si hay red. de entrada
+			newInput = fopen(line-> redirect_input, "r"); //abrimos el fichero como escritura
+			fdIn = fileno(newInput);
+			dup2(fdIn, 0);
+			fclose(newInput);
+		}
+		if (boolOut) { //si hay red. de salida
+			newOutput = fopen(line-> redirect_output, "w+"); //abrimos el fichero como escritura
+			fdOut= fileno(newOutput);
+			dup2(fdOut, 1);
+			fclose(newOutput);
+		}
+		if (boolErr) { //si hay red. de salida
+			newErr = fopen(line-> redirect_error, "w+"); //abrimos el fichero como escritura
+			fdErr= fileno(newErr);
+			dup2(fdErr, 2);
+			fclose(newErr);
+		}
+		execvp(line->commands[0].filename, line->commands[0].argv);
+		exit(1);
+	}
+	else{
+		wait(&status);
+	}
+
+}
+void execNCommand(int boolIn, int boolOut, int boolErr, int bg, tline* line){
+	int i,j;
+	char buf[1024];
+	int listaPipes[line->ncommands-1][2];
+	pipe(listaPipes[0]);
+	int pid1 = fork(); //primer hijo
+	if (pid1 == 0) {
+		close(listaPipes[0][0]);
+		if (boolIn) { //si hay red. de entrada
+			newInput = fopen(line-> redirect_input, "r"); //abrimos el fichero como escritura
+			fdIn = fileno(newInput);
+			dup2(fdIn, 0);
+			fclose(newInput);
+		}
+		dup2(listaPipes[0][1], 1);
+		close(listaPipes[0][1]); // CUIDAO
+		execvp(line->commands[0].filename, line->commands[0].argv);
+		exit(1);
+	}
+	else{		
+		for(int i = 1; i < (line->ncommands-1); i++) {
+			pipe(listaPipes[i]);
+			close(listaPipes[i-1][1]);
+			int pidN = fork();
+			if (pidN == 0) {
+				dup2(listaPipes[i-1][0], 0);
+				dup2(listaPipes[i][1], 1);
+				close(listaPipes[i][1]);
+				close(listaPipes[i-1][0]);
+				close(listaPipes[i][1]);
+				execvp(line->commands[i].filename, line->commands[i].argv);
+				exit(1);
+			}
+			else{
+				close(listaPipes[i-1][0]);
+			}
+		}
+		close(listaPipes[line->ncommands-2][1]);
+		int pid2 = fork();
+		if (pid2 == 0) {
+			dup2(listaPipes[line->ncommands-2][0], 0);
+			close(listaPipes[line->ncommands-2][0]);
+			if (boolOut) { //si hay red. de salida
+				newOutput = fopen(line-> redirect_output, "w+"); //abrimos el fichero como escritura
+				fdOut= fileno(newOutput);
+				dup2(fdOut, 1);
+				fclose(newOutput);
+			}
+			if (boolErr) { //si hay red. de salida
+				newErr = fopen(line-> redirect_error, "w+"); //abrimos el fichero como escritura
+				fdErr= fileno(newErr);
+				dup2(fdErr, 2);
+				fclose(newErr);
+			}
+			execvp(line->commands[line->ncommands-1].filename, line->commands[line->ncommands-1].argv);
+			exit(1);
+		}
+		else {
+			waitpid(pid2, NULL, 0);
+			for (int i = 0; i < (line->ncommands-1); i++) {
+				wait(NULL);
+			}
+		}
+	}
+
+}
+
+
