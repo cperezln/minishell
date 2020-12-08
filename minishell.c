@@ -7,7 +7,11 @@
 #include <string.h>
 #include <errno.h>
 #include <signal.h>
-
+//Tipos 
+typedef struct TCommandBG  {
+	int pid;
+	char * command;
+	} CommandBG;
 //Funciones Ejecutar
 void exec1Command(int boolIn, int boolOut, int boolErr, tline* line);
 void execNCommand(int boolIn, int boolOut, int boolErr, tline* line);
@@ -17,15 +21,21 @@ FILE * newInput, *newOutput, *newErr;
 int status;
 int fdIn, fdOut, fdErr;
 char directorioActual[512];
-
+int finishBg = 0;
+int commandBgNumber = 0;
 int main(void) {
+	CommandBG * bgList;
 	char buf[1024];
 	char *dir;
 	tline * line;
 	int boolIn, boolOut, boolErr, bg;
-	printf("%s==> ",getcwd(directorioActual, 512));	
+	printf("%s==> ",getcwd(directorioActual, 512));		
 	signal(SIGUSR1, handler);
 	while (fgets(buf, 1024, stdin)) {
+		if (finishBg) {
+			fprintf(stderr, "Ha terminado el proceso de bg\n");
+			finishBg = 0;
+		}
 		bg = 0;
 		boolIn = 0;
 		boolOut = 0;
@@ -58,7 +68,6 @@ int main(void) {
 			boolErr = 1;
 		}
 		if (line->background) {
-			printf("comando a ejecutarse en background\n");
 			bg = 1;
 		} 
 		if (line->ncommands == 1) { // Diferenciar caso un único mandato
@@ -74,7 +83,7 @@ int main(void) {
 				exec1Command(boolIn, boolOut, boolErr, line);
 			}
 		}
-		else if (line->ncommands>1) {
+		else if (line->ncommands>1) { //Diferenciar caso múltiples mandatos
 			if (bg) {
 				int pidBg = fork();
 				if (pidBg == 0) {
@@ -92,7 +101,7 @@ int main(void) {
 	return 0;
 }
 
-void exec1Command(int boolIn, int boolOut, int boolErr, int bg, tline* line){
+void exec1Command(int boolIn, int boolOut, int boolErr, tline* line){
 	int pid = fork();
 	if (pid == 0) {
 		if (boolIn) { //si hay red. de entrada
@@ -121,7 +130,7 @@ void exec1Command(int boolIn, int boolOut, int boolErr, int bg, tline* line){
 	}
 
 }
-void execNCommand(int boolIn, int boolOut, int boolErr, int bg, tline* line){
+void execNCommand(int boolIn, int boolOut, int boolErr, tline* line){
 	int i,j;
 	char buf[1024];
 	int listaPipes[line->ncommands-1][2];
@@ -189,5 +198,6 @@ void execNCommand(int boolIn, int boolOut, int boolErr, int bg, tline* line){
 }
 void handler(int sig){
 	wait(NULL);
+	finishBg = 1;
 }
 
