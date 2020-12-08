@@ -4,11 +4,14 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <string.h>
+#include <errno.h>
+#include <signal.h>
 
 //Funciones Ejecutar
-void exec1Command(int boolIn, int boolOut, int boolErr, int bg, tline* line);
-void execNCommand(int boolIn, int boolOut, int boolErr, int bg, tline* line);
-
+void exec1Command(int boolIn, int boolOut, int boolErr, tline* line);
+void execNCommand(int boolIn, int boolOut, int boolErr, tline* line);
+void handler(int sig);
 //Variables globales
 FILE * newInput, *newOutput, *newErr; 
 int status;
@@ -17,16 +20,30 @@ char directorioActual[512];
 
 int main(void) {
 	char buf[1024];
+	char *dir;
 	tline * line;
 	int boolIn, boolOut, boolErr, bg;
-	printf("%s==> ",getcwd(directorioActual,-1));	
+	printf("%s==> ",getcwd(directorioActual, 512));	
+	signal(SIGUSR1, handler);
 	while (fgets(buf, 1024, stdin)) {
+		bg = 0;
 		boolIn = 0;
 		boolOut = 0;
 		boolErr = 0;
 		line = tokenize(buf);
-		if (line==NULL) {
+		if (line==NULL || !strcmp(buf, "\n")) {
+			printf("%s==> ",getcwd(directorioActual, 512));	
 			continue;
+		}
+		if(!strcmp("cd", line->commands[0].argv[0]) && line->ncommands == 1){ // Entramos si es un cd
+			char * dir;
+			if (line->commands[0].argc == 1) {
+				dir = getenv("HOME");
+			}
+			else{
+				dir = line->commands[0].argv[1];
+			}
+			chdir(dir);
 		}
 		if (line->redirect_input != NULL) {
 			printf("redirección de entrada: %s\n", line->redirect_input);
@@ -42,14 +59,35 @@ int main(void) {
 		}
 		if (line->background) {
 			printf("comando a ejecutarse en background\n");
+			bg = 1;
 		} 
 		if (line->ncommands == 1) { // Diferenciar caso un único mandato
-			exec1Command(boolIn, boolOut, boolErr, bg, line);
+			if (bg) {
+				int pidBg = fork();
+				if (pidBg == 0) {
+					exec1Command(boolIn, boolOut, boolErr, line);
+					kill(getppid(), SIGUSR1); 
+					exit(0);
+				}
+			}
+			else{
+				exec1Command(boolIn, boolOut, boolErr, line);
+			}
 		}
 		else if (line->ncommands>1) {
-			execNCommand(boolIn, boolOut, boolErr, bg, line);
+			if (bg) {
+				int pidBg = fork();
+				if (pidBg == 0) {
+					execNCommand(boolIn, boolOut, boolErr, line);
+					kill(getppid(), SIGUSR1); 
+					exit(0);
+				}
+			}
+			else{
+				execNCommand(boolIn, boolOut, boolErr, line);
+			}		
 		}
-		printf("%s==> ",getcwd(directorioActual,-1));	
+		printf("%s==> ",getcwd(directorioActual,512));	
 	}
 	return 0;
 }
@@ -141,13 +179,15 @@ void execNCommand(int boolIn, int boolOut, int boolErr, int bg, tline* line){
 			exit(1);
 		}
 		else {
-			waitpid(pid2, NULL, 0);
-			for (int i = 0; i < (line->ncommands-1); i++) {
+			close(listaPipes[line->ncommands-2][0]);
+			for (int i = 0; i < (line->ncommands); i++) {
 				wait(NULL);
 			}
 		}
 	}
 
 }
-
+void handler(int sig){
+	wait(NULL);
+}
 
