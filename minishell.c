@@ -10,12 +10,16 @@
 //Tipos 
 typedef struct TCommandBG  {
 	int pid;
-	char * command;
+	char command[1024];
+	int number;
 	} CommandBG;
 //Funciones Ejecutar
 void exec1Command(int boolIn, int boolOut, int boolErr, tline* line);
 void execNCommand(int boolIn, int boolOut, int boolErr, tline* line);
 void handler(int sig);
+void delete(int pid);
+void metadelete();
+void jobs();
 //Variables globales
 FILE * newInput, *newOutput, *newErr; 
 int status;
@@ -23,8 +27,13 @@ int fdIn, fdOut, fdErr;
 char directorioActual[512];
 int finishBg = 0;
 int commandBgNumber = 0;
+int * pidFCommands;
+CommandBG * bgList;
+int nFCommands = 1;
+int lastNumber =0;
 int main(void) {
-	CommandBG * bgList;
+	bgList = (CommandBG*)malloc(sizeof(CommandBG));
+	pidFCommands = (int *) malloc(sizeof(int));
 	char buf[1024];
 	char *dir;
 	tline * line;
@@ -32,16 +41,15 @@ int main(void) {
 	printf("%s==> ",getcwd(directorioActual, 512));		
 	signal(SIGUSR1, handler);
 	while (fgets(buf, 1024, stdin)) {
-		if (finishBg) {
-			fprintf(stderr, "Ha terminado el proceso de bg\n");
-			finishBg = 0;
-		}
 		bg = 0;
 		boolIn = 0;
 		boolOut = 0;
 		boolErr = 0;
 		line = tokenize(buf);
 		if (line==NULL || !strcmp(buf, "\n")) {
+			if (finishBg) {
+				metadelete();
+			}
 			printf("%s==> ",getcwd(directorioActual, 512));	
 			continue;
 		}
@@ -54,6 +62,16 @@ int main(void) {
 				dir = line->commands[0].argv[1];
 			}
 			chdir(dir);
+		}
+		if(!strcmp("fg", line->commands[0].argv[0]) && line->ncommands == 1){ // Entramos si es un fg
+			int nFg = atoi(line->commands[0].argv[1]);
+			int i = 0;
+			while(bgList[i].number != nFg && i < commandBgNumber) {
+				i++;
+			}
+			if (bgList[i].number == nFg){
+				waitpid(bgList[i].pid, NULL, 0);
+			}
 		}
 		if (line->redirect_input != NULL) {
 			printf("redirección de entrada: %s\n", line->redirect_input);
@@ -70,13 +88,22 @@ int main(void) {
 		if (line->background) {
 			bg = 1;
 		} 
-		if (line->ncommands == 1) { // Diferenciar caso un único mandato
+		if (line->ncommands == 1 && strcmp("jobs", line->commands[0].argv[0])) { // Diferenciar caso un único mandato
 			if (bg) {
 				int pidBg = fork();
 				if (pidBg == 0) {
 					exec1Command(boolIn, boolOut, boolErr, line);
 					kill(getppid(), SIGUSR1); 
 					exit(0);
+				}
+				else{
+					(bgList + commandBgNumber)-> pid = pidBg;
+					strcpy((bgList + commandBgNumber)-> command, buf);
+					lastNumber++;
+					(bgList + commandBgNumber)-> number = lastNumber;
+					commandBgNumber++;					
+					bgList = (CommandBG*) realloc(bgList, sizeof(CommandBG)*(commandBgNumber+1));
+					fprintf(stderr, "[%d]  %d\n", commandBgNumber, pidBg);
 				}
 			}
 			else{
@@ -91,10 +118,25 @@ int main(void) {
 					kill(getppid(), SIGUSR1); 
 					exit(0);
 				}
+				else{
+					(bgList + commandBgNumber)-> pid = pidBg;
+					strcpy((bgList + commandBgNumber)-> command, buf);
+					lastNumber++;
+					(bgList + commandBgNumber)-> number = lastNumber ;
+					commandBgNumber++;					
+					bgList = (CommandBG*) realloc(bgList, sizeof(CommandBG)*(commandBgNumber + 1));
+					fprintf(stderr, "[%d]  %d\n", commandBgNumber, pidBg);
+				}
 			}
 			else{
 				execNCommand(boolIn, boolOut, boolErr, line);
 			}		
+		}
+		if(!strcmp("jobs", line->commands[0].argv[0]) && line->ncommands == 1){ // Entramos si es un jobs
+			jobs();
+		}
+		if (finishBg) {
+			metadelete();
 		}
 		printf("%s==> ",getcwd(directorioActual,512));	
 	}
@@ -184,7 +226,12 @@ void execNCommand(int boolIn, int boolOut, int boolErr, tline* line){
 				dup2(fdErr, 2);
 				fclose(newErr);
 			}
-			execvp(line->commands[line->ncommands-1].filename, line->commands[line->ncommands-1].argv);
+			if(strcmp("jobs", line->commands[line->ncommands-1].argv[0])) {
+				execvp(line->commands[line->ncommands-1].filename, line->commands[line->ncommands-1].argv);
+			}
+			else{
+				jobs();
+			}
 			exit(1);
 		}
 		else {
@@ -197,7 +244,54 @@ void execNCommand(int boolIn, int boolOut, int boolErr, tline* line){
 
 }
 void handler(int sig){
-	wait(NULL);
+	int pidf = wait(NULL);
+	*(pidFCommands + nFCommands) = pidf;
+	nFCommands++;
+	pidFCommands = (int *) realloc(pidFCommands, sizeof(int)*(nFCommands));
 	finishBg = 1;
 }
-
+void delete(int pid){
+	int bool = 0;
+	int j;
+	CommandBG *aux = (CommandBG*) malloc(sizeof(CommandBG)*(commandBgNumber));
+	for (int i = 0; i < commandBgNumber; i++){
+		if ((pid != bgList[i].pid) && (!bool)) {
+			aux[i].pid = bgList[i].pid;
+			aux[i].number = bgList[i].number;
+			strcpy(aux[i].command, bgList[i].command);			
+		}
+		else if(pid == bgList[i].pid){
+			bool = 1;
+			j = i;
+		}
+		else{
+			aux[i-1].pid = bgList[i].pid;
+			strcpy(aux[i-1].command, bgList[i].command);
+			aux[i-1].number = bgList[i].number;
+		}
+	}
+	char auxStr[1024];
+	strcpy(auxStr, bgList[j].command);
+	strtok(auxStr, "&");
+	strcat(auxStr, "\n");
+	fprintf(stderr, "[%d] Hecho\t\t\t%s", bgList[j].number, auxStr);
+	commandBgNumber--;
+	bgList = (CommandBG*) realloc(bgList, sizeof(CommandBG)*(commandBgNumber));
+	bgList = aux;
+}
+void metadelete(){
+	finishBg = 0;
+	for (int i = 1; i < nFCommands; i++){
+		delete(pidFCommands[i]);			
+	}
+	free(pidFCommands);
+	nFCommands = 1;
+	pidFCommands = (int*) malloc(sizeof(int));
+	lastNumber = bgList[commandBgNumber-1].number;
+}
+void jobs(){
+	metadelete();
+	for (int i = 0; i < commandBgNumber; i++) {
+		fprintf(stderr, "[%d] Ejecutando \t\t\t%s", bgList[i].number, bgList[i].command);
+	}
+}
