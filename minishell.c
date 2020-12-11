@@ -85,7 +85,7 @@ int main(void) {
 					(bgList + commandBgNumber)-> command = buf;
 					(bgList + commandBgNumber)-> number = lastNumber + 1;
 					commandBgNumber++;					
-					bgList = (CommandBG*) realloc(bgList, sizeof(CommandBG)*(commandBgNumber +1));
+					bgList = (CommandBG*) realloc(bgList, sizeof(CommandBG)*(commandBgNumber ));
 					fprintf(stderr, "[%d]+ : %d\n", commandBgNumber, pidBg);
 				}
 			}
@@ -122,6 +122,8 @@ int main(void) {
 				delete(pidFCommands[i], bgList);
 				
 			}
+			free(pidFCommands);
+			nFCommands = 0;
 		}
 		printf("%s==> ",getcwd(directorioActual,512));	
 	}
@@ -228,7 +230,6 @@ void handler(int sig){
 	nFCommands++;
 	pidFCommands = (int *) realloc(pidFCommands, sizeof(int)*nFCommands);
 	*(pidFCommands + nFCommands) = pidf;
-	fprintf(stderr, "%d\n", *(pidFCommands + nFCommands));
 	finishBg = 1;
 }
 void delete(int pid, CommandBG *bgList){
@@ -249,7 +250,7 @@ void delete(int pid, CommandBG *bgList){
 			strcpy(aux[i-1].command, bgList[i].command);
 		}
 	}
-	fprintf(stderr, "[%d]:\t terminado\t%s",bgList[j].number,bgList[j].command);
+	printf("[%d]:\t terminado\t%s",bgList[j].number,bgList[j].command);
 	commandBgNumber--;
 	free(bgList);
 	bgList = aux;
