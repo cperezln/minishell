@@ -17,11 +17,14 @@ typedef struct TCommandBG  {
 void exec1Command(int boolIn, int boolOut, int boolErr, tline* line);
 void execNCommand(int boolIn, int boolOut, int boolErr, tline* line);
 void handler(int sig);
+void handlerSI(int sig);
+void handlerSQ(int sig);
 void delete(int pid);
 void metadelete();
 void jobs();
 //Variables globales
 FILE * newInput, *newOutput, *newErr; 
+tline * line;
 int status;
 int fdIn, fdOut, fdErr;
 char directorioActual[512];
@@ -30,22 +33,25 @@ int commandBgNumber = 0;
 int * pidFCommands;
 CommandBG * bgList;
 int nFCommands = 1;
-int lastNumber =0;
+int lastNumber = 0;
+int boolean = 0;
 int main(void) {
 	bgList = (CommandBG*)malloc(sizeof(CommandBG));
 	pidFCommands = (int *) malloc(sizeof(int));
 	char buf[1024];
 	char *dir;
-	tline * line;
 	int boolIn, boolOut, boolErr, bg;
 	printf("%s==> ",getcwd(directorioActual, 512));		
 	signal(SIGUSR1, handler);
+	signal(SIGINT, handlerSI);
+	signal(SIGQUIT, handlerSQ);
 	while (fgets(buf, 1024, stdin)) {
 		bg = 0;
 		boolIn = 0;
 		boolOut = 0;
 		boolErr = 0;
 		line = tokenize(buf);
+		boolean = 1;
 		if (line==NULL || !strcmp(buf, "\n")) {
 			if (finishBg) {
 				metadelete();
@@ -74,15 +80,18 @@ int main(void) {
 			}
 		}
 		if (line->redirect_input != NULL) {
-			printf("redirección de entrada: %s\n", line->redirect_input);
+			newInput = fopen(line-> redirect_input, "r"); //abrimos el fichero como escritura
+			fdIn = fileno(newInput);			
 			boolIn = 1; //declaramos una variable booleana para distinguir casos a continuación
 		}
 		if (line->redirect_output != NULL) {
-			printf("redirección de salida: %s\n", line->redirect_output);
+			newOutput = fopen(line-> redirect_output, "w+"); //abrimos el fichero como escritura
+			fdOut= fileno(newOutput);
 			boolOut = 1;
 		}
 		if (line->redirect_error != NULL) {
-			printf("redirección de error: %s\n", line->redirect_error);
+			newErr = fopen(line-> redirect_error, "w+"); //abrimos el fichero como escritura
+			fdErr= fileno(newErr);
 			boolErr = 1;
 		}
 		if (line->background) {
@@ -147,20 +156,14 @@ void exec1Command(int boolIn, int boolOut, int boolErr, tline* line){
 	int pid = fork();
 	if (pid == 0) {
 		if (boolIn) { //si hay red. de entrada
-			newInput = fopen(line-> redirect_input, "r"); //abrimos el fichero como escritura
-			fdIn = fileno(newInput);
 			dup2(fdIn, 0);
 			fclose(newInput);
 		}
 		if (boolOut) { //si hay red. de salida
-			newOutput = fopen(line-> redirect_output, "w+"); //abrimos el fichero como escritura
-			fdOut= fileno(newOutput);
 			dup2(fdOut, 1);
 			fclose(newOutput);
 		}
 		if (boolErr) { //si hay red. de salida
-			newErr = fopen(line-> redirect_error, "w+"); //abrimos el fichero como escritura
-			fdErr= fileno(newErr);
 			dup2(fdErr, 2);
 			fclose(newErr);
 		}
@@ -181,8 +184,6 @@ void execNCommand(int boolIn, int boolOut, int boolErr, tline* line){
 	if (pid1 == 0) {
 		close(listaPipes[0][0]);
 		if (boolIn) { //si hay red. de entrada
-			newInput = fopen(line-> redirect_input, "r"); //abrimos el fichero como escritura
-			fdIn = fileno(newInput);
 			dup2(fdIn, 0);
 			fclose(newInput);
 		}
@@ -215,14 +216,10 @@ void execNCommand(int boolIn, int boolOut, int boolErr, tline* line){
 			dup2(listaPipes[line->ncommands-2][0], 0);
 			close(listaPipes[line->ncommands-2][0]);
 			if (boolOut) { //si hay red. de salida
-				newOutput = fopen(line-> redirect_output, "w+"); //abrimos el fichero como escritura
-				fdOut= fileno(newOutput);
 				dup2(fdOut, 1);
 				fclose(newOutput);
 			}
 			if (boolErr) { //si hay red. de salida
-				newErr = fopen(line-> redirect_error, "w+"); //abrimos el fichero como escritura
-				fdErr= fileno(newErr);
 				dup2(fdErr, 2);
 				fclose(newErr);
 			}
@@ -294,4 +291,25 @@ void jobs(){
 	for (int i = 0; i < commandBgNumber; i++) {
 		fprintf(stderr, "[%d] Ejecutando \t\t\t%s", bgList[i].number, bgList[i].command);
 	}
+}
+void handlerSI(int sig){
+	if (!boolean) {
+		fprintf(stderr, "\n%s==> ",getcwd(directorioActual,512));
+	}
+	else{
+		fprintf(stderr, "\n");
+		for (int i = 0; i < line->ncommands; i++){
+			wait(NULL);
+		}
+	}
+	boolean = 0;	
+}
+void handlerSQ(int sig){
+	if(boolean){
+		fprintf(stderr, "\n");
+		for (int i = 0; i < line->ncommands; i++){
+			wait(NULL);
+		}
+	}
+	boolean = 0;	
 }
