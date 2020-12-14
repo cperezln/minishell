@@ -31,27 +31,30 @@ char directorioActual[512];
 int finishBg = 0;
 int commandBgNumber = 0;
 int * pidFCommands;
+int * fgCommands;
 CommandBG * bgList;
 int nFCommands = 1;
 int lastNumber = 0;
-int boolean = 0;
+int bg, boolean;
 int main(void) {
 	bgList = (CommandBG*)malloc(sizeof(CommandBG));
 	pidFCommands = (int *) malloc(sizeof(int));
 	char buf[1024];
 	char *dir;
-	int boolIn, boolOut, boolErr, bg;
+	int boolIn, boolOut, boolErr;
 	printf("%s==> ",getcwd(directorioActual, 512));		
 	signal(SIGUSR1, handler);
 	signal(SIGINT, handlerSI);
 	signal(SIGQUIT, handlerSQ);
+	boolean = 0;
 	while (fgets(buf, 1024, stdin)) {
+		boolean = 1;
 		bg = 0;
 		boolIn = 0;
 		boolOut = 0;
 		boolErr = 0;
 		line = tokenize(buf);
-		boolean = 1;
+		fgCommands = (int*) malloc(sizeof(int)*(line->ncommands));
 		if (line==NULL || !strcmp(buf, "\n")) {
 			if (finishBg) {
 				metadelete();
@@ -101,6 +104,8 @@ int main(void) {
 			if (bg) {
 				int pidBg = fork();
 				if (pidBg == 0) {
+					signal(SIGINT, SIG_IGN);
+					signal(SIGQUIT, SIG_IGN);
 					exec1Command(boolIn, boolOut, boolErr, line);
 					kill(getppid(), SIGUSR1); 
 					exit(0);
@@ -123,6 +128,8 @@ int main(void) {
 			if (bg) {
 				int pidBg = fork();
 				if (pidBg == 0) {
+					signal(SIGINT, SIG_IGN);
+					signal(SIGQUIT, SIG_IGN);
 					execNCommand(boolIn, boolOut, boolErr, line);
 					kill(getppid(), SIGUSR1); 
 					exit(0);
@@ -147,7 +154,10 @@ int main(void) {
 		if (finishBg) {
 			metadelete();
 		}
-		printf("%s==> ",getcwd(directorioActual,512));	
+		if (boolean) {
+			fprintf(stderr, "%s==> ",getcwd(directorioActual,512));
+		}
+		free(fgCommands);
 	}
 	return 0;
 }
@@ -171,6 +181,7 @@ void exec1Command(int boolIn, int boolOut, int boolErr, tline* line){
 		exit(1);
 	}
 	else{
+		fgCommands[0] = pid;	
 		wait(&status);
 	}
 
@@ -192,7 +203,8 @@ void execNCommand(int boolIn, int boolOut, int boolErr, tline* line){
 		execvp(line->commands[0].filename, line->commands[0].argv);
 		exit(1);
 	}
-	else{		
+	else{
+		fgCommands[0] = pid1;		
 		for(int i = 1; i < (line->ncommands-1); i++) {
 			pipe(listaPipes[i]);
 			close(listaPipes[i-1][1]);
@@ -207,6 +219,7 @@ void execNCommand(int boolIn, int boolOut, int boolErr, tline* line){
 				exit(1);
 			}
 			else{
+				fgCommands[i] = pidN;
 				close(listaPipes[i-1][0]);
 			}
 		}
@@ -232,13 +245,13 @@ void execNCommand(int boolIn, int boolOut, int boolErr, tline* line){
 			exit(1);
 		}
 		else {
+			fgCommands[line->ncommands-1] = pid2;
 			close(listaPipes[line->ncommands-2][0]);
 			for (int i = 0; i < (line->ncommands); i++) {
 				wait(NULL);
 			}
 		}
 	}
-
 }
 void handler(int sig){
 	int pidf = wait(NULL);
@@ -293,23 +306,26 @@ void jobs(){
 	}
 }
 void handlerSI(int sig){
-	if (!boolean) {
-		fprintf(stderr, "\n%s==> ",getcwd(directorioActual,512));
+	if(bg != 0 && boolean){
+		for (int i = 0; i < line->ncommands; i++){
+			waitpid(fgCommands[i], NULL, 0);
+		}
 	}
 	else{
-		fprintf(stderr, "\n");
-		for (int i = 0; i < line->ncommands; i++){
-			wait(NULL);
-		}
+		fprintf(stderr, "\n%s==> ",getcwd(directorioActual,512));
 	}
-	boolean = 0;	
+	boolean = 0;
 }
 void handlerSQ(int sig){
-	if(boolean){
-		fprintf(stderr, "\n");
+	if(bg != 0 && boolean){
+	if(bg != 0 && boolean){
 		for (int i = 0; i < line->ncommands; i++){
-			wait(NULL);
+			waitpid(fgCommands[i], NULL, 0);
 		}
 	}
-	boolean = 0;	
+	else{
+		fprintf(stderr, "\n%s==> ",getcwd(directorioActual,512));
+	}
+	boolean = 0;
+	}
 }
