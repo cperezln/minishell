@@ -36,18 +36,20 @@ CommandBG * bgList;
 int nFCommands = 1;
 int lastNumber = 0;
 int bg, boolean;
+int auxiliarPid;
 int main(void) {
 	bgList = (CommandBG*)malloc(sizeof(CommandBG));
 	pidFCommands = (int *) malloc(sizeof(int));
 	char buf[1024];
-	char *dir;
 	int boolIn, boolOut, boolErr;
 	printf("%s==> ",getcwd(directorioActual, 512));		
-	signal(SIGUSR1, handler);
+	signal(SIGUSR1, handler);	
 	signal(SIGINT, handlerSI);
 	signal(SIGQUIT, handlerSQ);
+	signal(SIGUSR2, handler);
 	boolean = 0;
 	while (fgets(buf, 1024, stdin)) {
+		auxiliarPid = -1;
 		boolean = 1;
 		bg = 0;
 		boolIn = 0;
@@ -55,7 +57,7 @@ int main(void) {
 		boolErr = 0;
 		line = tokenize(buf);
 		fgCommands = (int*) malloc(sizeof(int)*(line->ncommands));
-		if (line==NULL || !strcmp(buf, "\n")) {
+		if (line==NULL || !strcmp(buf, "\n")) { //Si no introducen nada entramos aquí
 			if (finishBg) {
 				metadelete();
 			}
@@ -75,11 +77,18 @@ int main(void) {
 		if(!strcmp("fg", line->commands[0].argv[0]) && line->ncommands == 1){ // Entramos si es un fg
 			int nFg = atoi(line->commands[0].argv[1]);
 			int i = 0;
-			while(bgList[i].number != nFg && i < commandBgNumber) {
+			while(bgList[i].number != nFg && i < commandBgNumber) { //buscamos el proceso bg que queremos pasar a fg
 				i++;
 			}
 			if (bgList[i].number == nFg){
-				waitpid(bgList[i].pid, NULL, 0);
+				auxiliarPid = bgList[i].pid;
+				kill(auxiliarPid, SIGUSR2);
+				fprintf(stderr, "%s\n", bgList[i].command);
+				waitpid(auxiliarPid, NULL, 0); //esperamos ese proceso (pasarlo a fg)
+				delete(auxiliarPid);
+				nFCommands--;
+				fgCommands[0] = auxiliarPid;
+				finishBg = 1;
 			}
 		}
 		if (line->redirect_input != NULL) {
@@ -101,17 +110,17 @@ int main(void) {
 			bg = 1;
 		} 
 		if (line->ncommands == 1 && strcmp("jobs", line->commands[0].argv[0])) { // Diferenciar caso un único mandato
-			if (bg) {
+			if (bg) {//diferenciamos el caso que sea background
 				int pidBg = fork();
 				if (pidBg == 0) {
-					signal(SIGINT, SIG_IGN);
+					signal(SIGINT, SIG_IGN); //ignoramos las señales para que los procesos de bg no mueran con estas
 					signal(SIGQUIT, SIG_IGN);
 					exec1Command(boolIn, boolOut, boolErr, line);
 					kill(getppid(), SIGUSR1); 
 					exit(0);
 				}
 				else{
-					(bgList + commandBgNumber)-> pid = pidBg;
+					(bgList + commandBgNumber)-> pid = pidBg; //el padre no espera; pero introduce el hijo en la lista de procesos de bg, y continua con su ejecución
 					strcpy((bgList + commandBgNumber)-> command, buf);
 					lastNumber++;
 					(bgList + commandBgNumber)-> number = lastNumber;
@@ -120,22 +129,22 @@ int main(void) {
 					fprintf(stderr, "[%d]  %d\n", commandBgNumber, pidBg);
 				}
 			}
-			else{
+			else{ //caso que no sea bg
 				exec1Command(boolIn, boolOut, boolErr, line);
 			}
 		}
 		else if (line->ncommands>1) { //Diferenciar caso múltiples mandatos
-			if (bg) {
+			if (bg) {//diferenciamos el caso que sea background
 				int pidBg = fork();
 				if (pidBg == 0) {
-					signal(SIGINT, SIG_IGN);
+					signal(SIGINT, SIG_IGN);//ignoramos las señales para que los procesos de bg no mueran con estas
 					signal(SIGQUIT, SIG_IGN);
 					execNCommand(boolIn, boolOut, boolErr, line);
 					kill(getppid(), SIGUSR1); 
 					exit(0);
 				}
 				else{
-					(bgList + commandBgNumber)-> pid = pidBg;
+					(bgList + commandBgNumber)-> pid = pidBg;//el padre no espera; pero introduce el hijo en la lista de procesos de bg, y continua con su ejecución
 					strcpy((bgList + commandBgNumber)-> command, buf);
 					lastNumber++;
 					(bgList + commandBgNumber)-> number = lastNumber ;
@@ -144,17 +153,17 @@ int main(void) {
 					fprintf(stderr, "[%d]  %d\n", commandBgNumber, pidBg);
 				}
 			}
-			else{
+			else{//caso que no sea bg
 				execNCommand(boolIn, boolOut, boolErr, line);
 			}		
 		}
 		if(!strcmp("jobs", line->commands[0].argv[0]) && line->ncommands == 1){ // Entramos si es un jobs
 			jobs();
 		}
-		if (finishBg) {
+		if (finishBg) { //caso en el que hayan acabado procesos bg
 			metadelete();
 		}
-		if (boolean) {
+		if (boolean) { //condicional auxiliar para no imprimir dos veces el prompt en caso de que no se haya hecho \n
 			fprintf(stderr, "%s==> ",getcwd(directorioActual,512));
 		}
 		free(fgCommands);
@@ -177,35 +186,33 @@ void exec1Command(int boolIn, int boolOut, int boolErr, tline* line){
 			dup2(fdErr, 2);
 			fclose(newErr);
 		}
-		execvp(line->commands[0].filename, line->commands[0].argv);
+		execvp(line->commands[0].filename, line->commands[0].argv); //Ejecutamos el mandato en el hijo
 		exit(1);
 	}
 	else{
-		fgCommands[0] = pid;	
+		fgCommands[0] = pid;	//El padre espera
 		wait(&status);
 	}
 
 }
 void execNCommand(int boolIn, int boolOut, int boolErr, tline* line){
-	int i,j;
-	char buf[1024];
 	int listaPipes[line->ncommands-1][2];
 	pipe(listaPipes[0]);
 	int pid1 = fork(); //primer hijo
-	if (pid1 == 0) {
+	if (pid1 == 0) { //Creamos un primer hijo para el primer mandato del pipe
 		close(listaPipes[0][0]);
 		if (boolIn) { //si hay red. de entrada
 			dup2(fdIn, 0);
 			fclose(newInput);
 		}
 		dup2(listaPipes[0][1], 1);
-		close(listaPipes[0][1]); // CUIDAO
+		close(listaPipes[0][1]); 
 		execvp(line->commands[0].filename, line->commands[0].argv);
 		exit(1);
 	}
 	else{
 		fgCommands[0] = pid1;		
-		for(int i = 1; i < (line->ncommands-1); i++) {
+		for(int i = 1; i < (line->ncommands-1); i++) {//Vamos creando hijos sucesivamente para ir ejecutando los mandatos intermedios
 			pipe(listaPipes[i]);
 			close(listaPipes[i-1][1]);
 			int pidN = fork();
@@ -225,7 +232,7 @@ void execNCommand(int boolIn, int boolOut, int boolErr, tline* line){
 		}
 		close(listaPipes[line->ncommands-2][1]);
 		int pid2 = fork();
-		if (pid2 == 0) {
+		if (pid2 == 0) { //El último hijo, que ejecuta el último mandato del pipe
 			dup2(listaPipes[line->ncommands-2][0], 0);
 			close(listaPipes[line->ncommands-2][0]);
 			if (boolOut) { //si hay red. de salida
@@ -254,13 +261,18 @@ void execNCommand(int boolIn, int boolOut, int boolErr, tline* line){
 	}
 }
 void handler(int sig){
-	int pidf = wait(NULL);
-	*(pidFCommands + nFCommands) = pidf;
-	nFCommands++;
-	pidFCommands = (int *) realloc(pidFCommands, sizeof(int)*(nFCommands));
-	finishBg = 1;
+	if(sig == SIGUSR1) {
+		int pidf = wait(NULL); //l padre recoge el PID de el hijo que ha acabado de background
+		*(pidFCommands + nFCommands) = pidf;
+		nFCommands++;
+		pidFCommands = (int *) realloc(pidFCommands, sizeof(int)*(nFCommands)); //Metemos en la lista de mandatos acabados en BG
+		finishBg = 1;
+	}
+	else {
+		signal(SIGINT, SIG_DFL);
+	}
 }
-void delete(int pid){
+void delete(int pid){ //La función delete se encarga de borrar un mandato en concreto de la lista de mandatos en background, el que haya finalizado
 	int bool = 0;
 	int j;
 	CommandBG *aux = (CommandBG*) malloc(sizeof(CommandBG)*(commandBgNumber));
@@ -284,12 +296,14 @@ void delete(int pid){
 	strcpy(auxStr, bgList[j].command);
 	strtok(auxStr, "&");
 	strcat(auxStr, "\n");
-	fprintf(stderr, "[%d] Hecho\t\t\t%s", bgList[j].number, auxStr);
+	if (bgList[j].pid != auxiliarPid){
+		fprintf(stderr, "[%d] Hecho\t\t\t%s", bgList[j].number, auxStr);
+	}
 	commandBgNumber--;
 	bgList = (CommandBG*) realloc(bgList, sizeof(CommandBG)*(commandBgNumber));
 	bgList = aux;
 }
-void metadelete(){
+void metadelete(){ //Metadelete ejecuta el delete n veces, donde n es el número de mandatos en background acabados en esta iteración del while
 	finishBg = 0;
 	for (int i = 1; i < nFCommands; i++){
 		delete(pidFCommands[i]);			
@@ -299,33 +313,31 @@ void metadelete(){
 	pidFCommands = (int*) malloc(sizeof(int));
 	lastNumber = bgList[commandBgNumber-1].number;
 }
-void jobs(){
+void jobs(){ //Recorre la lista de procesos en bg y la muestra por pantalla
 	metadelete();
 	for (int i = 0; i < commandBgNumber; i++) {
 		fprintf(stderr, "[%d] Ejecutando \t\t\t%s", bgList[i].number, bgList[i].command);
 	}
 }
-void handlerSI(int sig){
-	if(bg != 0 && boolean){
+void handlerSI(int sig){ //Handler para controlar las señales de Ctrl + C
+	if(bg == 0){
 		for (int i = 0; i < line->ncommands; i++){
+			kill(fgCommands[i], SIGKILL);
 			waitpid(fgCommands[i], NULL, 0);
 		}
+		
 	}
-	else{
-		fprintf(stderr, "\n%s==> ",getcwd(directorioActual,512));
-	}
+	fprintf(stderr, "\n%s==> ",getcwd(directorioActual,512));
 	boolean = 0;
 }
-void handlerSQ(int sig){
-	if(bg != 0 && boolean){
-	if(bg != 0 && boolean){
+void handlerSQ(int sig){//Handler para controlar las señales de Ctrl + Alt Gr 
+	if(bg == 0){
 		for (int i = 0; i < line->ncommands; i++){
+			kill(fgCommands[i], SIGKILL);
 			waitpid(fgCommands[i], NULL, 0);
 		}
-	}
-	else{
 		fprintf(stderr, "\n%s==> ",getcwd(directorioActual,512));
-	}
-	boolean = 0;
+		boolean = 0;
 	}
 }
+
