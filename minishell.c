@@ -1,3 +1,11 @@
+/* Minishell desarrollada por alumnos de la URJC del Doble Grado de Ingeniería Informática y Matemáticas
+ Juan Antonio Gordillo Gayo y Cristian Pếrez Corral
+ para la asignatura de Sistemas Operativos
+ el uso de dicho programa sólo se permitirá con fines académicos
+ 
+ Finalizada  el día 19 de diciembre del 2020
+ */
+
 #include <stdio.h>
 #include <unistd.h>
 #include "parser.h"
@@ -38,7 +46,6 @@ int nFCommands = 1;
 int lastNumber = 0;
 int bg, boolean;
 int auxiliarPid;
-int nose = -10000;
 int main(void) {
 	bgList = (CommandBG*)malloc(sizeof(CommandBG));
 	pidFCommands = (int *) malloc(sizeof(int));
