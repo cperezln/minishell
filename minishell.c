@@ -28,6 +28,7 @@ tline * line;
 int status;
 int fdIn, fdOut, fdErr;
 char directorioActual[512];
+char buf[1024];
 int finishBg = 0;
 int commandBgNumber = 0;
 int * pidFCommands;
@@ -37,10 +38,10 @@ int nFCommands = 1;
 int lastNumber = 0;
 int bg, boolean;
 int auxiliarPid;
+int nose = -10000;
 int main(void) {
 	bgList = (CommandBG*)malloc(sizeof(CommandBG));
 	pidFCommands = (int *) malloc(sizeof(int));
-	char buf[1024];
 	int boolIn, boolOut, boolErr;
 	printf("%s==> ",getcwd(directorioActual, 512));		
 	signal(SIGUSR1, handler);	
@@ -66,45 +67,81 @@ int main(void) {
 		}
 		if(!strcmp("cd", line->commands[0].argv[0]) && line->ncommands == 1){ // Entramos si es un cd
 			char * dir;
-			if (line->commands[0].argc == 1) {
-				dir = getenv("HOME");
+			if (line->commands[0].argc > 2) {
+				fprintf(stderr, "Demasiados argumentos para cd. Se espera 1, pero %d recibidos\n", line->commands[0].argc);
 			}
-			else{
-				dir = line->commands[0].argv[1];
+			else {
+				if (line->commands[0].argc == 1) {
+					dir = getenv("HOME");
+				}
+				else{
+					dir = line->commands[0].argv[1];
+				}
+				if (chdir(dir) != 0) {
+					fprintf(stderr, "Error al cambiar de directorio %s.\n", strerror(errno));
+				}
 			}
-			chdir(dir);
 		}
 		if(!strcmp("fg", line->commands[0].argv[0]) && line->ncommands == 1){ // Entramos si es un fg
-			int nFg = atoi(line->commands[0].argv[1]);
 			int i = 0;
-			while(bgList[i].number != nFg && i < commandBgNumber) { //buscamos el proceso bg que queremos pasar a fg
-				i++;
+			if (line->commands[0].argc == 2){
+				int nFg = atoi(line->commands[0].argv[1]);
+				while(bgList[i].number != nFg && i < commandBgNumber) { //buscamos el proceso bg que queremos pasar a fg
+					i++;
+				}
+				if (bgList[i].number == nFg){
+					auxiliarPid = bgList[i].pid;
+					kill(auxiliarPid, SIGUSR2);
+					fprintf(stderr, "%s\n", bgList[i].command);
+					waitpid(auxiliarPid, NULL, 0); //esperamos ese proceso (pasarlo a fg)
+					delete(auxiliarPid);
+					nFCommands--;
+					fgCommands[0] = auxiliarPid;
+					finishBg = 1;
+				}
+				else {
+					fprintf(stderr, "Proceso no encontrado en background\n");
+				}
 			}
-			if (bgList[i].number == nFg){
-				auxiliarPid = bgList[i].pid;
-				kill(auxiliarPid, SIGUSR2);
-				fprintf(stderr, "%s\n", bgList[i].command);
-				waitpid(auxiliarPid, NULL, 0); //esperamos ese proceso (pasarlo a fg)
-				delete(auxiliarPid);
-				nFCommands--;
-				fgCommands[0] = auxiliarPid;
-				finishBg = 1;
+			else{
+				fprintf(stderr, "Número de parámetros incorrecto para fg. Se espera 1, fueron %d introducidos\n", line->commands[0].argc - 1);
 			}
 		}
 		if (line->redirect_input != NULL) {
 			newInput = fopen(line-> redirect_input, "r"); //abrimos el fichero como escritura
-			fdIn = fileno(newInput);			
-			boolIn = 1; //declaramos una variable booleana para distinguir casos a continuación
+			if (newInput != NULL) {
+				fdIn = fileno(newInput);			
+				boolIn = 1; //declaramos una variable booleana para distinguir casos a continuación
+			}
+			else {
+				fprintf(stderr, "Ha habido un error al abrir el fichero. %s\n", strerror(errno));
+				fprintf(stderr, "%s==> ",getcwd(directorioActual,512));
+				continue;
+			}
 		}
 		if (line->redirect_output != NULL) {
 			newOutput = fopen(line-> redirect_output, "w+"); //abrimos el fichero como escritura
-			fdOut= fileno(newOutput);
-			boolOut = 1;
+			if (newOutput != NULL) {
+				fdOut= fileno(newOutput);
+				boolOut = 1; 
+			}
+			else {
+				fprintf(stderr, "Ha habido un error al abrir el fichero. %s\n", strerror(errno));
+				fprintf(stderr, "%s==> ",getcwd(directorioActual,512));
+				continue;
+			}
 		}
 		if (line->redirect_error != NULL) {
 			newErr = fopen(line-> redirect_error, "w+"); //abrimos el fichero como escritura
-			fdErr= fileno(newErr);
-			boolErr = 1;
+			if (newErr != NULL) {
+				fdErr= fileno(newErr);
+				boolErr = 1;
+			}
+			else {
+				fprintf(stderr, "Ha habido un error al abrir el fichero. %s\n", strerror(errno));
+				fprintf(stderr, "%s==> ",getcwd(directorioActual,512));
+				continue;				
+			}
 		}
 		if (line->background) {
 			bg = 1;
@@ -186,8 +223,13 @@ void exec1Command(int boolIn, int boolOut, int boolErr, tline* line){
 			dup2(fdErr, 2);
 			fclose(newErr);
 		}
-		execvp(line->commands[0].filename, line->commands[0].argv); //Ejecutamos el mandato en el hijo
-		exit(1);
+		if (line->commands[0].filename == NULL) {
+			fprintf(stderr, "Orden <<%s>> no encontrada.\n", line->commands[0].argv[0]);
+		} 
+		else {
+			execvp(line->commands[0].filename, line->commands[0].argv); //Ejecutamos el mandato en el hijo
+			exit(1);
+		}
 	}
 	else{
 		fgCommands[0] = pid;	//El padre espera
@@ -207,8 +249,13 @@ void execNCommand(int boolIn, int boolOut, int boolErr, tline* line){
 		}
 		dup2(listaPipes[0][1], 1);
 		close(listaPipes[0][1]); 
-		execvp(line->commands[0].filename, line->commands[0].argv);
-		exit(1);
+		if (line->commands[0].filename == NULL) {
+			fprintf(stderr, "Orden <<%s>> no encontrada.\n", line->commands[0].argv[0]);
+		} 
+		else {
+			execvp(line->commands[0].filename, line->commands[0].argv);
+			exit(1);
+		}
 	}
 	else{
 		fgCommands[0] = pid1;		
@@ -222,8 +269,13 @@ void execNCommand(int boolIn, int boolOut, int boolErr, tline* line){
 				close(listaPipes[i][1]);
 				close(listaPipes[i-1][0]);
 				close(listaPipes[i][1]);
-				execvp(line->commands[i].filename, line->commands[i].argv);
-				exit(1);
+				if (line->commands[i].filename == NULL) {
+					fprintf(stderr, "Orden <<%s>> no encontrada.\n", line->commands[i].argv[0]);
+				} 
+				else {
+					execvp(line->commands[i].filename, line->commands[i].argv);
+					exit(1);
+				}
 			}
 			else{
 				fgCommands[i] = pidN;
@@ -244,7 +296,13 @@ void execNCommand(int boolIn, int boolOut, int boolErr, tline* line){
 				fclose(newErr);
 			}
 			if(strcmp("jobs", line->commands[line->ncommands-1].argv[0])) {
-				execvp(line->commands[line->ncommands-1].filename, line->commands[line->ncommands-1].argv);
+				if (line->commands[line->ncommands-1].filename == NULL) {
+					fprintf(stderr, "Orden <<%s>> no encontrada.\n", line->commands[line->ncommands-1].argv[0]);
+				}
+				else { 
+					execvp(line->commands[line->ncommands-1].filename, line->commands[line->ncommands-1].argv);
+					exit(1);
+				}
 			}
 			else{
 				jobs();
@@ -262,7 +320,7 @@ void execNCommand(int boolIn, int boolOut, int boolErr, tline* line){
 }
 void handler(int sig){
 	if(sig == SIGUSR1) {
-		int pidf = wait(NULL); //l padre recoge el PID de el hijo que ha acabado de background
+		int pidf = wait(NULL); //el padre recoge el PID de el hijo que ha acabado de background
 		*(pidFCommands + nFCommands) = pidf;
 		nFCommands++;
 		pidFCommands = (int *) realloc(pidFCommands, sizeof(int)*(nFCommands)); //Metemos en la lista de mandatos acabados en BG
@@ -320,9 +378,9 @@ void jobs(){ //Recorre la lista de procesos en bg y la muestra por pantalla
 	}
 }
 void handlerSI(int sig){ //Handler para controlar las señales de Ctrl + C
-	if(bg == 0){
+	if(bg == 0 && line != NULL){
 		for (int i = 0; i < line->ncommands; i++){
-			kill(fgCommands[i], SIGKILL);
+			kill(fgCommands[i], SIGINT);
 			waitpid(fgCommands[i], NULL, 0);
 		}
 		
@@ -331,9 +389,9 @@ void handlerSI(int sig){ //Handler para controlar las señales de Ctrl + C
 	boolean = 0;
 }
 void handlerSQ(int sig){//Handler para controlar las señales de Ctrl + Alt Gr 
-	if(bg == 0){
+	if(bg == 0 && line != NULL){
 		for (int i = 0; i < line->ncommands; i++){
-			kill(fgCommands[i], SIGKILL);
+			kill(fgCommands[i], SIGINT);
 			waitpid(fgCommands[i], NULL, 0);
 		}
 		fprintf(stderr, "\n%s==> ",getcwd(directorioActual,512));
