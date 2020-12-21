@@ -153,7 +153,7 @@ int main(void) {
 		if (line->background) {
 			bg = 1;
 		} 
-		if (line->ncommands == 1 && strcmp("jobs", line->commands[0].argv[0])) { // Diferenciar caso un único mandato
+		if (line->ncommands == 1 && strcmp("jobs", line->commands[0].argv[0]) && strcmp("fg", line->commands[0].argv[0]) && strcmp("cd", line->commands[0].argv[0])) { // Diferenciar caso un único mandato
 			if (bg) {//diferenciamos el caso que sea background
 				int pidBg = fork();
 				if (pidBg == 0) {
@@ -211,6 +211,7 @@ int main(void) {
 			fprintf(stderr, "%s==> ",getcwd(directorioActual,512));
 		}
 		free(fgCommands);
+		line = NULL;
 	}
 	return 0;
 }
@@ -401,8 +402,8 @@ void handlerSQ(int sig){//Handler para controlar las señales de Ctrl + Alt Gr
 			kill(fgCommands[i], SIGINT);
 			waitpid(fgCommands[i], NULL, 0);
 		}
-		fprintf(stderr, "\n%s==> ",getcwd(directorioActual,512));
-		boolean = 0;
 	}
+	fprintf(stderr, "\n%s==> ",getcwd(directorioActual,512));
+	boolean = 0;
 }
 
