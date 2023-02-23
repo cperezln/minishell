@@ -7,4 +7,4 @@ Implement functionalities such as pipes, pointer handling, multi-threading and s
 
 If you want to implement it yourself or just upgrade it, please let me know.
 
-Hope that you enjoy it and it is useful to play around with C and some abstract stuff such as pipes and threading. ^^
+Hope that you enjoy it and it is useful to play around with C and some abstract stuff such as pipes and threading. 
